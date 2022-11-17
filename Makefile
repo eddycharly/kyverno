@@ -683,7 +683,7 @@ kind-deploy-kyverno: $(HELM) kind-load-all ## Build images, load them in kind cl
 		--set initImage.repository=$(LOCAL_KYVERNOPRE_IMAGE) \
 		--set initImage.tag=$(IMAGE_TAG_DEV) \
 		--set initContainer.extraArgs={--loggingFormat=text} \
-		--set "extraArgs={--loggingFormat=text}"
+		--set "extraArgs={--loggingFormat=text,--enableTracing=true,--otelCollector=tempo.monitoring,--otelConfig=grpc,--metricsPort=4317,--disableMetrics=true}"
 	@echo Restart kyverno pods... >&2
 	@kubectl rollout restart deployment -n kyverno
 
@@ -709,7 +709,7 @@ kind-deploy-reporter: $(HELM) ## Deploy policy-reporter helm chart
 		--set ui.enabled=true \
 		--set kyvernoPlugin.enabled=true \
 		--create-namespace
-	@kubectl port-forward -n policy-reporter services/policy-reporter-ui  8082:8080
+	@kubectl port-forward -n policy-reporter services/policy-reporter-ui 8082:8080
 
 ########
 # HELP #
