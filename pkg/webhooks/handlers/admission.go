@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,18 +11,28 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/kyverno/kyverno/pkg/tracing"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	admissionv1 "k8s.io/api/admission/v1"
 )
 
-type AdmissionHandler func(logr.Logger, *admissionv1.AdmissionRequest, time.Time) *admissionv1.AdmissionResponse
+type (
+	AdmissionHandler func(logr.Logger, *admissionv1.AdmissionRequest, time.Time) *admissionv1.AdmissionResponse
+	HttpHandler      func(http.ResponseWriter, *http.Request)
+)
 
-func (h AdmissionHandler) WithAdmission(logger logr.Logger) http.HandlerFunc {
+func (h AdmissionHandler) WithAdmission(logger logr.Logger) HttpHandler {
 	return withAdmission(logger, h)
 }
 
-func withAdmission(logger logr.Logger, inner AdmissionHandler) http.HandlerFunc {
+func withAdmission(logger logr.Logger, inner AdmissionHandler) HttpHandler {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		ctx := request.Context()
+		ctx, span := tracing.StartSpan(
+			request.Context(),
+			request.URL.Path,
+			request.URL.Path,
+			attribute.String("host", request.URL.Host),
+		)
+		defer span.End()
 		startTime := time.Now()
 		if request.Body == nil {
 			logger.Info("empty body", "req", request.URL.String())
@@ -59,35 +70,32 @@ func withAdmission(logger logr.Logger, inner AdmissionHandler) http.HandlerFunc 
 			Allowed: true,
 			UID:     admissionReview.Request.UID,
 		}
-		adminssionResponse := inner(logger, admissionReview.Request, startTime)
-		if adminssionResponse != nil {
-			admissionReview.Response = adminssionResponse
-		}
-		responseJSON, err := json.Marshal(admissionReview)
-		if err != nil {
-			http.Error(writer, fmt.Sprintf("Could not encode response: %v", err), http.StatusInternalServerError)
-			return
-		}
-
 		// start span from request context
-		attributes := []attribute.KeyValue{
+		tracing.Span(ctx, "admission_webhook_operations", string(admissionReview.Request.Operation), func(context.Context, trace.Span) {
+			adminssionResponse := inner(logger, admissionReview.Request, startTime)
+			if adminssionResponse != nil {
+				admissionReview.Response = adminssionResponse
+			}
+			responseJSON, err := json.Marshal(admissionReview)
+			if err != nil {
+				http.Error(writer, fmt.Sprintf("Could not encode response: %v", err), http.StatusInternalServerError)
+				return
+			}
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if _, err := writer.Write(responseJSON); err != nil {
+				http.Error(writer, fmt.Sprintf("could not write response: %v", err), http.StatusInternalServerError)
+			}
+			if admissionReview.Request.Kind.Kind == "Lease" {
+				logger.V(6).Info("admission review request processed", "time", time.Since(startTime).String())
+			} else {
+				logger.V(4).Info("admission review request processed", "time", time.Since(startTime).String())
+			}
+		}, trace.WithAttributes(
 			attribute.String("kind", admissionReview.Request.Kind.Kind),
 			attribute.String("namespace", admissionReview.Request.Namespace),
 			attribute.String("name", admissionReview.Request.Name),
 			attribute.String("operation", string(admissionReview.Request.Operation)),
 			attribute.String("uid", string(admissionReview.Request.UID)),
-		}
-		span := tracing.StartSpan(ctx, "admission_webhook_operations", string(admissionReview.Request.Operation), attributes)
-		defer span.End()
-
-		writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if _, err := writer.Write(responseJSON); err != nil {
-			http.Error(writer, fmt.Sprintf("could not write response: %v", err), http.StatusInternalServerError)
-		}
-		if admissionReview.Request.Kind.Kind == "Lease" {
-			logger.V(6).Info("admission review request processed", "time", time.Since(startTime).String())
-		} else {
-			logger.V(4).Info("admission review request processed", "time", time.Since(startTime).String())
-		}
+		))
 	}
 }
