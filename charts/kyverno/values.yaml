@@ -662,3 +662,15 @@ cleanupController:
     nodePort:
     # -- Service annotations.
     annotations: {}
+
+  certManager:
+    enabled: true
+
+    issuer:
+      create: true
+
+    certificate:
+      create: true
+      issuer:
+        name:
+        kind: Issuer

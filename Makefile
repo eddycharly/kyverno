@@ -794,8 +794,15 @@ dev-lab-metrics-server: $(HELM) ## Deploy metrics-server helm chart
 		--repo https://charts.bitnami.com/bitnami metrics-server \
 		--values ./scripts/config/dev/metrics-server.yaml
 
+.PHONY: dev-lab-cert-manager
+dev-lab-cert-manager: $(HELM) ## Deploy cert-manager helm chart
+	@echo Install cert-manager chart... >&2
+	@$(HELM) upgrade --install cert-manager --namespace cert-manager --create-namespace --wait \
+		--repo https://charts.jetstack.io cert-manager \
+		--values ./scripts/config/dev/cert-manager.yaml
+
 .PHONY: dev-lab-all
-dev-lab-all: dev-lab-ingress-ngingx dev-lab-metrics-server dev-lab-prometheus dev-lab-loki dev-lab-tempo
+dev-lab-all: dev-lab-ingress-ngingx dev-lab-metrics-server dev-lab-prometheus dev-lab-loki dev-lab-tempo dev-lab-cert-manager
 
 ########
 # HELP #

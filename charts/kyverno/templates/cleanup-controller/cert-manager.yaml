@@ -1,0 +1,37 @@
+{{- if .Values.cleanupController.enabled }}
+{{- if .Values.cleanupController.certManager.enabled }}
+{{- if .Values.cleanupController.certManager.issuer.create }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ template "kyverno.cleanup-controller.deploymentName" . }}
+  namespace: {{ template "kyverno.namespace" . }}
+  labels:
+    {{- include "kyverno.cleanup-controller.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}
+---
+{{- if .Values.cleanupController.certManager.certificate.create }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ template "kyverno.cleanup-controller.deploymentName" . }}
+  namespace: {{ template "kyverno.namespace" . }}
+  labels:
+    {{- include "kyverno.cleanup-controller.labels" . | nindent 4 }}
+spec:
+  secretName: {{ template "kyverno.cleanup-controller.deploymentName" . }}
+  dnsNames:
+    - {{ printf "%s.%s.svc" (include "kyverno.cleanup-controller.deploymentName" .) (include "kyverno.namespace" .) }}
+  {{- if .Values.cleanupController.certManager.issuer.create }}
+  issuerRef:
+    name: {{ template "kyverno.cleanup-controller.deploymentName" . }}
+  {{- else }}
+  issuerRef:
+    name: {{ required "Certificate issuer name is required" .Values.cleanupController.certManager.certificate.issuer.name }}
+    kind: {{ required "Certificate issuer kind is required" .Values.cleanupController.certManager.certificate.issuer.kind }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
