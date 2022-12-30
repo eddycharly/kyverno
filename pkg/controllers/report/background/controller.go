@@ -7,7 +7,6 @@ import (
 	"github.com/go-logr/logr"
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	kyvernov1alpha2 "github.com/kyverno/kyverno/api/kyverno/v1alpha2"
-	policyreportv1alpha2 "github.com/kyverno/kyverno/api/policyreport/v1alpha2"
 	"github.com/kyverno/kyverno/pkg/client/clientset/versioned"
 	kyvernov1informers "github.com/kyverno/kyverno/pkg/client/informers/externalversions/kyverno/v1"
 	kyvernov1listers "github.com/kyverno/kyverno/pkg/client/listers/kyverno/v1"
@@ -198,217 +197,290 @@ func (c *controller) fetchPolicies(logger logr.Logger, namespace string) ([]kyve
 	return policies, nil
 }
 
-func (c *controller) updateReport(ctx context.Context, meta metav1.Object, gvk schema.GroupVersionKind, resource resource.Resource) error {
-	namespace := meta.GetNamespace()
-	metaLabels := meta.GetLabels()
+// func (c *controller) getMeta(namespace, name string) (metav1.Object, error) {
+// 	if namespace == "" {
+// 		obj, err := c.cbgscanrLister.Get(name)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		return obj.(metav1.Object), err
+// 	} else {
+// 		obj, err := c.bgscanrLister.ByNamespace(namespace).Get(name)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		return obj.(metav1.Object), err
+// 	}
+// }
+
+// func (c *controller) updateReport(ctx context.Context, meta metav1.Object, gvk schema.GroupVersionKind, resource resource.Resource) error {
+// 	namespace := meta.GetNamespace()
+// 	metaLabels := meta.GetLabels()
+// 	// load all policies
+// 	policies, err := c.fetchClusterPolicies(logger)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	if namespace != "" {
+// 		pols, err := c.fetchPolicies(logger, namespace)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		policies = append(policies, pols...)
+// 	}
+// 	// 	load background policies
+// 	backgroundPolicies := utils.RemoveNonBackgroundPolicies(logger, policies...)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	force := false
+// 	metaAnnotations := meta.GetAnnotations()
+// 	if metaAnnotations == nil || metaAnnotations[annotationLastScanTime] == "" {
+// 		force = true
+// 	} else {
+// 		annTime, err := time.Parse(time.RFC3339, metaAnnotations[annotationLastScanTime])
+// 		if err != nil {
+// 			logger.Error(err, "failed to parse last scan time", "namespace", resource.Namespace, "name", resource.Name)
+// 			force = true
+// 		} else {
+// 			force = time.Now().After(annTime.Add(c.forceDelay))
+// 		}
+// 	}
+// 	//	if the resource changed, we need to rebuild the report
+// 	if force || !reportutils.CompareHash(meta, resource.Hash) {
+// 		scanner := utils.NewScanner(logger, c.client, c.rclient, c.informerCacheResolvers)
+// 		before, err := c.getReport(ctx, meta.GetNamespace(), meta.GetName())
+// 		if err != nil {
+// 			return nil
+// 		}
+// 		report := reportutils.DeepCopy(before)
+// 		resource, err := c.client.GetResource(ctx, gvk.GroupVersion().String(), gvk.Kind, resource.Namespace, resource.Name)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		reportutils.SetResourceVersionLabels(report, resource)
+// 		if resource == nil {
+// 			return nil
+// 		}
+// 		var nsLabels map[string]string
+// 		if namespace != "" {
+// 			ns, err := c.nsLister.Get(namespace)
+// 			if err != nil {
+// 				return err
+// 			}
+// 			nsLabels = ns.GetLabels()
+// 		}
+// 		var responses []*response.EngineResponse
+// 		for _, result := range scanner.ScanResource(ctx, *resource, nsLabels, backgroundPolicies...) {
+// 			if result.Error != nil {
+// 				logger.Error(result.Error, "failed to apply policy")
+// 			} else {
+// 				responses = append(responses, result.EngineResponse)
+// 			}
+// 		}
+// 		controllerutils.SetAnnotation(report, annotationLastScanTime, time.Now().Format(time.RFC3339))
+// 		reportutils.SetResponses(report, responses...)
+// 		if utils.ReportsAreIdentical(before, report) {
+// 			return nil
+// 		}
+// 		_, err = reportutils.UpdateReport(ctx, report, c.kyvernoClient)
+// 		return err
+// 	} else {
+// 		expected := map[string]kyvernov1.PolicyInterface{}
+// 		for _, policy := range backgroundPolicies {
+// 			expected[reportutils.PolicyLabel(policy)] = policy
+// 		}
+// 		toDelete := map[string]string{}
+// 		for label := range metaLabels {
+// 			if reportutils.IsPolicyLabel(label) {
+// 				// if the policy doesn't exist anymore
+// 				if expected[label] == nil {
+// 					if name, err := reportutils.PolicyNameFromLabel(namespace, label); err != nil {
+// 						return err
+// 					} else {
+// 						toDelete[name] = label
+// 					}
+// 				}
+// 			}
+// 		}
+// 		var toCreate []kyvernov1.PolicyInterface
+// 		for label, policy := range expected {
+// 			// if the background policy changed, we need to recreate entries
+// 			if metaLabels[label] != policy.GetResourceVersion() {
+// 				if name, err := reportutils.PolicyNameFromLabel(namespace, label); err != nil {
+// 					return err
+// 				} else {
+// 					toDelete[name] = label
+// 				}
+// 				toCreate = append(toCreate, policy)
+// 			}
+// 		}
+// 		if len(toDelete) == 0 && len(toCreate) == 0 {
+// 			return nil
+// 		}
+// 		before, err := c.getReport(ctx, meta.GetNamespace(), meta.GetName())
+// 		if err != nil {
+// 			return err
+// 		}
+// 		report := reportutils.DeepCopy(before)
+// 		var ruleResults []policyreportv1alpha2.PolicyReportResult
+// 		// deletions
+// 		reportLabels := report.GetLabels()
+// 		if reportLabels != nil {
+// 			for _, label := range toDelete {
+// 				delete(reportLabels, label)
+// 			}
+// 		}
+// 		for _, result := range report.GetResults() {
+// 			if _, ok := toDelete[result.Policy]; !ok {
+// 				ruleResults = append(ruleResults, result)
+// 			}
+// 		}
+// 		// creations
+// 		if len(toCreate) > 0 {
+// 			scanner := utils.NewScanner(logger, c.client, c.rclient, c.informerCacheResolvers)
+// 			resource, err := c.client.GetResource(ctx, gvk.GroupVersion().String(), gvk.Kind, resource.Namespace, resource.Name)
+// 			if err != nil {
+// 				return err
+// 			}
+// 			reportutils.SetResourceVersionLabels(report, resource)
+// 			var nsLabels map[string]string
+// 			if namespace != "" {
+// 				ns, err := c.nsLister.Get(namespace)
+// 				if err != nil {
+// 					return err
+// 				}
+// 				nsLabels = ns.GetLabels()
+// 			}
+// 			for _, result := range scanner.ScanResource(ctx, *resource, nsLabels, toCreate...) {
+// 				if result.Error != nil {
+// 					return result.Error
+// 				} else {
+// 					reportutils.SetPolicyLabel(report, result.EngineResponse.Policy)
+// 					ruleResults = append(ruleResults, reportutils.EngineResponseToReportResults(result.EngineResponse)...)
+// 				}
+// 			}
+// 		}
+// 		reportutils.SetResults(report, ruleResults...)
+// 		if utils.ReportsAreIdentical(before, report) {
+// 			return nil
+// 		}
+// 		_, err = reportutils.UpdateReport(ctx, report, c.kyvernoClient)
+// 		return err
+// 	}
+// }
+
+func (c *controller) getReport(ctx context.Context, namespace, name string) (kyvernov1alpha2.ReportInterface, error) {
+	if namespace == "" {
+		if report, err := c.kyvernoClient.KyvernoV1alpha2().ClusterBackgroundScanReports().Get(ctx, name, metav1.GetOptions{}); err != nil {
+			return nil, err
+		} else {
+			return report, nil
+		}
+	} else {
+		if report, err := c.kyvernoClient.KyvernoV1alpha2().BackgroundScanReports(namespace).Get(ctx, name, metav1.GetOptions{}); err != nil {
+			return nil, err
+		} else {
+			return report, nil
+		}
+	}
+}
+
+func (c *controller) buildReport(ctx context.Context, namespace, name string, uid types.UID, gvk schema.GroupVersionKind, res resource.Resource) (kyvernov1alpha2.ReportInterface, error) {
+	report := reportutils.NewBackgroundScanReport(namespace, name, gvk, res.Name, uid)
 	// load all policies
 	policies, err := c.fetchClusterPolicies(logger)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if namespace != "" {
 		pols, err := c.fetchPolicies(logger, namespace)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		policies = append(policies, pols...)
 	}
 	// 	load background policies
 	backgroundPolicies := utils.RemoveNonBackgroundPolicies(logger, policies...)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	force := false
-	metaAnnotations := meta.GetAnnotations()
-	if metaAnnotations == nil || metaAnnotations[annotationLastScanTime] == "" {
-		force = true
-	} else {
-		annTime, err := time.Parse(time.RFC3339, metaAnnotations[annotationLastScanTime])
+	scanner := utils.NewScanner(logger, c.client, c.rclient, c.informerCacheResolvers)
+	resource, err := c.client.GetResource(ctx, gvk.GroupVersion().String(), gvk.Kind, res.Namespace, res.Name)
+	if err != nil {
+		return nil, err
+	}
+	reportutils.SetResourceVersionLabels(report, resource)
+	var nsLabels map[string]string
+	if namespace != "" {
+		ns, err := c.nsLister.Get(namespace)
 		if err != nil {
-			logger.Error(err, "failed to parse last scan time", "namespace", resource.Namespace, "name", resource.Name)
-			force = true
+			return nil, err
+		}
+		nsLabels = ns.GetLabels()
+	}
+	var responses []*response.EngineResponse
+	for _, result := range scanner.ScanResource(ctx, *resource, nsLabels, backgroundPolicies...) {
+		if result.Error != nil {
+			logger.Error(result.Error, "failed to apply policy")
 		} else {
-			force = time.Now().After(annTime.Add(c.forceDelay))
+			responses = append(responses, result.EngineResponse)
 		}
 	}
-	//	if the resource changed, we need to rebuild the report
-	if force || !reportutils.CompareHash(meta, resource.Hash) {
-		scanner := utils.NewScanner(logger, c.client, c.rclient, c.informerCacheResolvers)
-		before, err := c.getReport(ctx, meta.GetNamespace(), meta.GetName())
-		if err != nil {
-			return nil
-		}
-		report := reportutils.DeepCopy(before)
-		resource, err := c.client.GetResource(ctx, gvk.GroupVersion().String(), gvk.Kind, resource.Namespace, resource.Name)
-		if err != nil {
-			return err
-		}
-		reportutils.SetResourceVersionLabels(report, resource)
-		if resource == nil {
-			return nil
-		}
-		var nsLabels map[string]string
-		if namespace != "" {
-			ns, err := c.nsLister.Get(namespace)
-			if err != nil {
-				return err
-			}
-			nsLabels = ns.GetLabels()
-		}
-		var responses []*response.EngineResponse
-		for _, result := range scanner.ScanResource(ctx, *resource, nsLabels, backgroundPolicies...) {
-			if result.Error != nil {
-				logger.Error(result.Error, "failed to apply policy")
-			} else {
-				responses = append(responses, result.EngineResponse)
-			}
-		}
-		controllerutils.SetAnnotation(report, annotationLastScanTime, time.Now().Format(time.RFC3339))
-		reportutils.SetResponses(report, responses...)
-		if utils.ReportsAreIdentical(before, report) {
-			return nil
-		}
-		_, err = reportutils.UpdateReport(ctx, report, c.kyvernoClient)
-		return err
-	} else {
-		expected := map[string]kyvernov1.PolicyInterface{}
-		for _, policy := range backgroundPolicies {
-			expected[reportutils.PolicyLabel(policy)] = policy
-		}
-		toDelete := map[string]string{}
-		for label := range metaLabels {
-			if reportutils.IsPolicyLabel(label) {
-				// if the policy doesn't exist anymore
-				if expected[label] == nil {
-					if name, err := reportutils.PolicyNameFromLabel(namespace, label); err != nil {
-						return err
-					} else {
-						toDelete[name] = label
-					}
-				}
-			}
-		}
-		var toCreate []kyvernov1.PolicyInterface
-		for label, policy := range expected {
-			// if the background policy changed, we need to recreate entries
-			if metaLabels[label] != policy.GetResourceVersion() {
-				if name, err := reportutils.PolicyNameFromLabel(namespace, label); err != nil {
-					return err
-				} else {
-					toDelete[name] = label
-				}
-				toCreate = append(toCreate, policy)
-			}
-		}
-		if len(toDelete) == 0 && len(toCreate) == 0 {
-			return nil
-		}
-		before, err := c.getReport(ctx, meta.GetNamespace(), meta.GetName())
-		if err != nil {
-			return err
-		}
-		report := reportutils.DeepCopy(before)
-		var ruleResults []policyreportv1alpha2.PolicyReportResult
-		// deletions
-		reportLabels := report.GetLabels()
-		if reportLabels != nil {
-			for _, label := range toDelete {
-				delete(reportLabels, label)
-			}
-		}
-		for _, result := range report.GetResults() {
-			if _, ok := toDelete[result.Policy]; !ok {
-				ruleResults = append(ruleResults, result)
-			}
-		}
-		// creations
-		if len(toCreate) > 0 {
-			scanner := utils.NewScanner(logger, c.client, c.rclient, c.informerCacheResolvers)
-			resource, err := c.client.GetResource(ctx, gvk.GroupVersion().String(), gvk.Kind, resource.Namespace, resource.Name)
-			if err != nil {
-				return err
-			}
-			reportutils.SetResourceVersionLabels(report, resource)
-			var nsLabels map[string]string
-			if namespace != "" {
-				ns, err := c.nsLister.Get(namespace)
-				if err != nil {
-					return err
-				}
-				nsLabels = ns.GetLabels()
-			}
-			for _, result := range scanner.ScanResource(ctx, *resource, nsLabels, toCreate...) {
-				if result.Error != nil {
-					return result.Error
-				} else {
-					reportutils.SetPolicyLabel(report, result.EngineResponse.Policy)
-					ruleResults = append(ruleResults, reportutils.EngineResponseToReportResults(result.EngineResponse)...)
-				}
-			}
-		}
-		reportutils.SetResults(report, ruleResults...)
-		if utils.ReportsAreIdentical(before, report) {
-			return nil
-		}
-		_, err = reportutils.UpdateReport(ctx, report, c.kyvernoClient)
-		return err
-	}
+	controllerutils.SetAnnotation(report, annotationLastScanTime, time.Now().Format(time.RFC3339))
+	reportutils.SetResponses(report, responses...)
+	return report, nil
 }
 
-func (c *controller) getReport(ctx context.Context, namespace, name string) (kyvernov1alpha2.ReportInterface, error) {
-	if namespace == "" {
-		return c.kyvernoClient.KyvernoV1alpha2().ClusterBackgroundScanReports().Get(ctx, name, metav1.GetOptions{})
-	} else {
-		return c.kyvernoClient.KyvernoV1alpha2().BackgroundScanReports(namespace).Get(ctx, name, metav1.GetOptions{})
-	}
-}
-
-func (c *controller) getMeta(namespace, name string) (metav1.Object, error) {
-	if namespace == "" {
-		obj, err := c.cbgscanrLister.Get(name)
-		if err != nil {
-			return nil, err
-		}
-		return obj.(metav1.Object), err
-	} else {
-		obj, err := c.bgscanrLister.ByNamespace(namespace).Get(name)
-		if err != nil {
-			return nil, err
-		}
-		return obj.(metav1.Object), err
-	}
-}
-
-func (c *controller) reconcile(ctx context.Context, logger logr.Logger, _, namespace, name string) error {
-	// try to find resource from the cache
+func (c *controller) computeReport(ctx context.Context, namespace, name string) (kyvernov1alpha2.ReportInterface, error) {
 	uid := types.UID(name)
 	resource, gvk, exists := c.metadataCache.GetResourceHash(uid)
 	// if the resource is not present it means we shouldn't have a report for it
-	// we can delete the report, we will recreate one if the resource comes back
 	if !exists {
-		report, err := c.getMeta(namespace, name)
-		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return err
-			}
-		} else {
-			if report.GetNamespace() == "" {
-				return c.kyvernoClient.KyvernoV1alpha2().ClusterBackgroundScanReports().Delete(ctx, report.GetName(), metav1.DeleteOptions{})
-			} else {
-				return c.kyvernoClient.KyvernoV1alpha2().BackgroundScanReports(report.GetNamespace()).Delete(ctx, report.GetName(), metav1.DeleteOptions{})
-			}
-		}
-		return nil
+		return nil, nil
 	}
-	// try to find report from the cache
-	report, err := c.getMeta(namespace, name)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// if there's no report yet, try to create an empty one
-			_, err = reportutils.CreateReport(ctx, reportutils.NewBackgroundScanReport(namespace, name, gvk, resource.Name, uid), c.kyvernoClient)
-			return err
-		}
+	return c.buildReport(ctx, namespace, name, uid, gvk, resource)
+}
+
+func (c *controller) reconcile(ctx context.Context, logger logr.Logger, key, namespace, name string) error {
+	observed, err := c.getReport(ctx, namespace, name)
+	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	return c.updateReport(ctx, report, gvk, resource)
+	desired, err := c.computeReport(ctx, namespace, name)
+	if err != nil {
+		return err
+	}
+	// we don't have a report and we don't want one
+	if observed == nil && desired == nil {
+		return nil
+	}
+	// we have a report but we don't want one
+	if observed != nil && desired == nil {
+		if observed.GetNamespace() == "" {
+			return c.kyvernoClient.KyvernoV1alpha2().ClusterBackgroundScanReports().Delete(ctx, observed.GetName(), metav1.DeleteOptions{})
+		} else {
+			return c.kyvernoClient.KyvernoV1alpha2().BackgroundScanReports(observed.GetNamespace()).Delete(ctx, observed.GetName(), metav1.DeleteOptions{})
+		}
+	}
+	// we don't have a report but we want one
+	if observed == nil && desired != nil {
+		if _, err = reportutils.CreateReport(ctx, desired, c.kyvernoClient); err != nil {
+			return err
+		}
+		// requeue after enqueue delay to force report recomputation
+		defer c.queue.AddAfter(key, enqueueDelay)
+	}
+	// we have a report and we want one
+	if observed != nil && desired != nil {
+		if utils.ReportsAreIdentical(observed, desired) {
+			return nil
+		}
+		if _, err := reportutils.UpdateReport(ctx, desired, c.kyvernoClient); err != nil {
+			return err
+		}
+		// requeue after enqueue delay to force report recomputation
+		defer c.queue.AddAfter(key, enqueueDelay)
+	}
+	return nil
 }
