@@ -1,0 +1,21 @@
+name: Setup release env
+
+description: Installs release tools, helm, cosign, chart releaser.
+
+inputs:
+  helm-version:
+    description: helm version
+    default: v3.10.3
+  cosign-version:
+    description: cosign version
+    default: v1.13.0
+
+runs:
+  using: composite
+  steps:
+    - uses: azure/setup-helm@5119fcb9089d432beecbf79bb2c7915207344b78 # v3.5
+      with:
+        version: ${{ inputs.helm-version }}
+    - uses: sigstore/cosign-installer@9becc617647dfa20ae7b1151972e9b3a2c338a2b # v2.8.1
+      with:
+        cosign-release: ${{ inputs.cosign-version }}

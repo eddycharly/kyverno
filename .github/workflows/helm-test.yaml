@@ -5,9 +5,6 @@ on:
     branches:
       - main
       - release*
-    paths:
-      - charts/**
-      - .github/workflows/helm-test.yaml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,15 +18,5 @@ jobs:
         uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
       - name: Setup build env
         uses: ./.github/actions/setup-build-env
-      - name: Setup python
-        uses: actions/setup-python@5ccb29d8773c3f3f653e1705f474dfaa8a06a912 # v4.4.0
-        with:
-          python-version: 3.7
-      - name: Set up chart-testing
-        uses: helm/chart-testing-action@afea100a513515fbd68b0e72a7bb0ae34cb62aec # v2.3.1
-      - name: Run chart-testing (lint)
-        run: |
-          if [[ $(ct list-changed --target-branch=main) ]];
-          then
-            ct lint --target-branch=main --check-version-increment=false
-          fi
+      - name: Run helm test
+        uses: ./.github/actions/helm-test

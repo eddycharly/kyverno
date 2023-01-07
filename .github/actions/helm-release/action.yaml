@@ -1,0 +1,45 @@
+name: Helm release
+
+description: Releases helm chart.
+
+inputs:
+  token:
+    description: token
+    default: ${{ secrets.GITHUB_TOKEN }}
+  registry:
+    description: registry
+    required: true
+  registry-username:
+    description: registry username
+    required: true
+  registry-password:
+    description: registry password
+    required: true
+  charts-path:
+    description: charts path
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: stefanprodan/helm-gh-pages@0ad2bb377311d61ac04ad9eb6f252fb68e207260 #v1.7.0
+      with:
+        token: ${{ inputs.token }}
+        charts_dir: ${{ inputs.charts-path }}
+        linting: off
+    - shell: bash
+      run: |
+        helm registry login --username ${{ inputs.registry-username }} --password ${{ inputs.registry-password }} ${{ inputs.registry }}
+    - shell: bash
+      env:
+        COSIGN_EXPERIMENTAL: '1'
+      run: |
+        for dir in `find ${{ inputs.charts-path }} -maxdepth 1 -mindepth 1 -type d -print`
+        do
+          chart=${dir##*/}
+          echo "Found chart: ${chart}"
+          helm package ${{ inputs.charts-path }}/${chart} --destination .dist
+          helm push .dist/${chart}-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts |& tee .digest
+          cosign login --username ${GITHUB_ACTOR} --password ${{ secrets.CR_PAT_ARTIFACTS }} ghcr.io
+          cosign sign ghcr.io/${{ github.repository_owner }}/charts/${chart}@$(cat .digest | awk -F "[, ]+" '/Digest/{print $NF}')
+        done

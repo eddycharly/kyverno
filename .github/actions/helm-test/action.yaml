@@ -1,0 +1,13 @@
+name: Helm test
+
+description: Runs helm test.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5ccb29d8773c3f3f653e1705f474dfaa8a06a912 # v4.4.0
+      with:
+        python-version: 3.7
+    - uses: helm/chart-testing-action@afea100a513515fbd68b0e72a7bb0ae34cb62aec # v2.3.1
+    - shell: bash
+      run: ct lint --target-branch=main --check-version-increment=false
