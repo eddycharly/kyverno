@@ -12,12 +12,20 @@ rules:
     resources:
       - secrets
     verbs:
+      - create
+  - apiGroups:
+      - ''
+    resources:
+      - secrets
+    verbs:
+      - delete
       - get
       - list
-      - watch
-      - create
       - update
-      - delete
+      - watch
+    resourceNames:
+      - {{ template "kyverno.admission-controller.serviceName" . }}.{{ template "kyverno.namespace" . }}.svc.kyverno-tls-ca
+      - {{ template "kyverno.admission-controller.serviceName" . }}.{{ template "kyverno.namespace" . }}.svc.kyverno-tls-pair
   - apiGroups:
       - ''
     resources:
@@ -35,10 +43,20 @@ rules:
       - leases
     verbs:
       - create
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
       - delete
       - get
       - patch
       - update
+    resourceNames:
+      - kyverno
+      - kyverno-health
+      - kyvernopre
+      - kyvernopre-lock
   # Allow update of Kyverno deployment annotations
   - apiGroups:
       - apps
