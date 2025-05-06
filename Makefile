@@ -744,8 +744,7 @@ codegen-fix-policies: $(CLI_BIN) ## Fix CLI policy files
 .PHONY: codegen-fix-all
 codegen-fix-all: ## Fixes files
 codegen-fix-all: codegen-fix-tests
-# TODO: fix this target
-# codegen-fix-all: codegen-fix-policies
+codegen-fix-all: codegen-fix-policies
 
 .PHONY: codegen-all
 codegen-all: ## Generate all generated code

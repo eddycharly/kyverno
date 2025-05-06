@@ -26,14 +26,15 @@ func FixPolicy(policy kyvernov1.PolicyInterface) ([]string, error) {
 			rule.MatchResources.ResourceDescription = kyvernov1.ResourceDescription{}
 			rule.MatchResources.UserInfo = kyvernov1.UserInfo{}
 		}
-		if !reflect.DeepEqual(rule.ExcludeResources.ResourceDescription, kyvernov1.ResourceDescription{}) || !reflect.DeepEqual(rule.ExcludeResources.UserInfo, kyvernov1.UserInfo{}) {
-			messages = append(messages, "exclude uses old syntax, moving to any")
-			rule.ExcludeResources.Any = append(rule.ExcludeResources.Any, kyvernov1.ResourceFilter{
-				ResourceDescription: rule.ExcludeResources.ResourceDescription,
-				UserInfo:            rule.ExcludeResources.UserInfo,
-			})
-			rule.ExcludeResources.ResourceDescription = kyvernov1.ResourceDescription{}
-			rule.ExcludeResources.UserInfo = kyvernov1.UserInfo{}
+		if rule.ExcludeResources != nil {
+			if !reflect.DeepEqual(rule.ExcludeResources.ResourceDescription, kyvernov1.ResourceDescription{}) || !reflect.DeepEqual(rule.ExcludeResources.UserInfo, kyvernov1.UserInfo{}) {
+				messages = append(messages, "exclude uses old syntax, moving to any")
+				rule.ExcludeResources.Any = append(rule.ExcludeResources.Any, kyvernov1.ResourceFilter{
+					ResourceDescription: rule.ExcludeResources.ResourceDescription,
+					UserInfo:            rule.ExcludeResources.UserInfo,
+				})
+				rule.ExcludeResources = nil
+			}
 		}
 		preconditions := rule.GetAnyAllConditions()
 		if preconditions != nil {
